@@ -38,7 +38,11 @@ with sync_playwright() as p:
     # 3 検索
     pg.fill("#q", "lukas")
     check("検索で1件", pg.locator("[data-guest].row").count() == 1)
+    check("検索で詳細も追従", "Lukas Becker" in pg.locator(".d-head h1").inner_text())
+    pg.fill("#q", "zzzz")
+    check("0件で詳細は空表示", "検索に合うゲストがいません" in pg.locator("#app").inner_text())
     pg.fill("#q", "")
+    check("担当ありで24時間超は警告", "返信待ち" in pg.locator('[data-guest="g8"].row').inner_text())
 
     # 4 担当なしのゲスト → 自分が対応する → 下書き → 送信
     pg.locator('[data-guest="g2"].row').click()
@@ -51,13 +55,19 @@ with sync_playwright() as p:
     pg.wait_for_timeout(300)
     check("送信で履歴+1", pg.locator("#app .mail").count() == before + 1)
     check("送信で返信済", "返信済" in pg.locator(".d-head").inner_text())
+    check("下書き送信で未対応0", pg.locator(".ai li:not(.done) input[data-todo]").count() == 0)
+    check("担当の記録", "返信しました" in pg.locator("#app").inner_text())
 
     # 5 二重対応防止：山本で佐藤担当のゲストを開くとロック
     pg.select_option("#role", "yamamoto")
     pg.locator('[data-guest="g1"].row').click()
-    check("他人担当はロック表示", "佐藤さんが対応中" in pg.locator(".lock").inner_text())
+    check("他人担当はロック表示", "佐藤さんが担当です" in pg.locator(".lock").inner_text())
     check("他人担当は返信欄無効", pg.locator("#reply").is_disabled())
     pg.screenshot(path=str(shots / "03_lock.png"))
+    pg.click('[data-act="takeover"]')
+    check("引き継ぎは確認を挟む", "引き継ぎますか" in pg.locator(".lock").inner_text() and pg.locator("#reply").is_disabled())
+    pg.click('[data-act="takeover-ok"]')
+    check("引き継ぎが記録に残る", "佐藤さん → 山本さん" in pg.locator("#app").inner_text())
 
     # 6 ゲスト→ツアー→ゲストの相互リンク
     pg.locator(".tour-chip").first.click()
@@ -75,7 +85,17 @@ with sync_playwright() as p:
     # 8 共通メール
     pg.click("#tab-inbox")
     check("受信箱8行", pg.locator(".inbox-row").count() == 8)
-    check("返信漏れ注意あり", pg.locator("text=返信漏れ注意").count() >= 1)
+    check("担当なし24時間超の件数あり", "返信漏れの恐れ" in pg.locator(".summary-strip").inner_text())
+    check("管理者以外はスタッフ別表なし", pg.locator("text=管理者だけに表示").count() == 0)
+    pg.click('[data-act="fetch"]')
+    pg.wait_for_timeout(200)
+    pg.locator('.inbox-row button[data-guest="g6"]').click()
+    check("新着取込でゲストにひも付く", pg.locator("#app .mail").count() == 2 and "新着" in pg.locator(".ai").inner_text())
+    pg.click("#tab-inbox")
+    pg.check("#only-open")
+    check("返信待ちだけ表示", all("返信済" not in r for r in pg.locator(".inbox-row").all_inner_texts()))
+    pg.select_option("#role", "mori")
+    check("管理者はスタッフ別表あり", pg.locator("text=管理者だけに表示").count() == 1)
     pg.screenshot(path=str(shots / "05_inbox.png"), full_page=True)
 
     # 9 ガイド権限：ガイド画面以外が閉じる・メール/入金は出ない

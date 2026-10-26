@@ -230,7 +230,7 @@ const GUESTS = [
    requests:[{t:"酒蔵の日本酒試飲を追加（+3,500円/人）",src:"m14",q:"Yes please add the sake tasting."}],
    todos:[{t:"残金70%は当日払いと案内",src:"m15",q:"The remaining 70% can be paid on the day in cash or card.",done:true}]},
   draft:""},
- {id:"g5",name:"James Carter",country:"アメリカ",email:"james.carter@example.invalid",phone:"+1 212 000 0005",pax:2,booking:"予約確定",pay:"入金済",tours:["t03"],handler:null,state:"返信済",
+ {id:"g5",name:"James Carter",country:"アメリカ",email:"james.carter@example.invalid",phone:"+1 212 000 0005",pax:2,booking:"予約確定",pay:"入金済",tours:["t03"],handler:"山本",state:"返信済",
   emails:[
    {id:"m16",dir:"in",at:"2026-10-05 12:00",subj:"Booking for Shimanto",body:"Hi, booking 2 seats for Shimanto 14 Nov. Paid via the link. My wife Olivia uses a hearing aid, so please make sure the guide speaks clearly in the safety briefing."},
    {id:"m17",dir:"out",at:"2026-10-05 17:30",subj:"Re: Booking for Shimanto",body:"Dear James,\nThank you, payment confirmed. We will give Olivia a printed safety sheet as well."}
@@ -256,7 +256,7 @@ const GUESTS = [
    requests:[{t:"室戸岬で日の出撮影（11/29 6:40頃）",src:"m19",q:"is there time for sunrise photos at Cape Muroto?"}],
    todos:[{t:"早朝散策を行程に追加",src:"m20",q:"we will add an optional early walk to the cape.",done:true}]},
   draft:""},
- {id:"g8",name:"Aisha Rahman",country:"マレーシア",email:"aisha.rahman@example.invalid",phone:"+60 3 0000 0008",pax:2,booking:"予約確定",pay:"入金済",tours:["t05"],handler:"佐藤",state:"未対応",
+ {id:"g8",name:"Aisha Rahman",country:"マレーシア",email:"aisha.rahman@example.invalid",phone:"+60 3 0000 0008",pax:2,booking:"予約確定",pay:"入金済",tours:["t05"],handler:"佐藤",state:"対応中",
   emails:[
    {id:"m21",dir:"in",at:"2026-10-15 13:12",subj:"Niyodo 21 Nov - halal food",body:"Hello, 2 people for Niyodo Blue on 21 Nov. We need halal food, and a quiet place to pray at noon if possible."},
    {id:"m22",dir:"out",at:"2026-10-15 18:00",subj:"Re: Niyodo 21 Nov - halal food",body:"Dear Aisha,\nBooked. We will prepare a halal-certified bento and a quiet room at the visitor centre around noon."},
@@ -310,16 +310,23 @@ function range(t){return t.days>1?`${fmtDate(t.start)}〜${fmtDate(addDays(t.sta
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 /* ---------- 状態 ---------- */
-let S={view:"guests",guest:"g1",tour:"t03",user:"sato",flashMail:null,q:"",tourFilter:"upcoming"};
+let S={view:"guests",guest:"g1",tour:"t03",user:"sato",flashMail:null,q:"",tourFilter:"upcoming",confirmTake:false,onlyOpen:false,fetched:false};
 function me(){return USERS[S.user]}
 function lastIn(g){const ins=g.emails.filter(m=>m.dir==="in");return ins[ins.length-1]}
 function unanswered(g){const l=g.emails[g.emails.length-1];return l.dir==="in"}
 function hoursSince(at){return Math.round((new Date(TODAY+"T12:00:00")-new Date(at.replace(" ","T")+":00"))/36e5)}
+/* 状態はデータから導く：返信待ちか（最後が受信か）× 担当者がいるか × 24時間を過ぎたか */
+const STALE_H=24;
+function stale(g){return unanswered(g)&&g.handler&&hoursSince(lastIn(g).at)>=STALE_H}
+function late(g){return unanswered(g)&&!g.handler&&hoursSince(lastIn(g).at)>=STALE_H}
 function stateChip(g){
-  if(g.state==="返信済"&&!unanswered(g))return '<span class="chip c-ok">返信済</span>';
+  if(!unanswered(g))return `<span class="chip c-ok">返信済${g.handler?`（担当 ${esc(g.handler)}）`:""}</span>`;
+  if(stale(g))return `<span class="chip c-warn">⚠ 返信待ち${hoursSince(lastIn(g).at)}時間：${esc(g.handler)}</span>`;
   if(g.handler)return `<span class="chip c-river">対応中：${esc(g.handler)}</span>`;
-  return '<span class="chip c-bad">未対応</span>';
+  if(late(g))return `<span class="chip c-bad">⚠ 返信漏れの恐れ${hoursSince(lastIn(g).at)}時間・担当なし</span>`;
+  return '<span class="chip c-bad">未対応・担当なし</span>';
 }
+function logAdd(g,text){(g.log=g.log||[]).push({at:`${TODAY} 12:00`,text})}
 function payChip(p){return `<span class="chip ${p==="入金済"?"c-ok":p==="一部入金"?"c-warn":"c-bad"}">${p}</span>`}
 function bookChip(b){return `<span class="chip ${b==="予約確定"?"c-ok":b==="仮予約"?"c-warn":"c-sand"}">${b}</span>`}
 function toast(t){const el=document.getElementById("toast");el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>el.hidden=true,2600)}
@@ -328,7 +335,9 @@ function toast(t){const el=document.getElementById("toast");el.textContent=t;el.
 function viewGuests(){
   const q=S.q.toLowerCase();
   const list=GUESTS.filter(g=>!q||(g.name+g.email+g.country).toLowerCase().includes(q));
-  const g=guestById(S.guest)||list[0];
+  /* 絞り込みで選択中のゲストが消えたら先頭へ。0件なら詳細を空にする */
+  let g=list.find(x=>x.id===S.guest)||list[0]||null;
+  if(g)S.guest=g.id;
   return `<div class="split">
    <section class="panel" aria-label="ゲスト一覧">
      <div class="list-head"><input id="q" type="search" placeholder="名前・メールで検索" value="${esc(S.q)}" aria-label="ゲスト検索"></div>
@@ -340,16 +349,20 @@ function viewGuests(){
        </button>`).join("")||'<div class="empty">該当するゲストがいません</div>'}
      </div>
    </section>
-   <section class="panel detail" aria-label="ゲスト詳細">${g?guestDetail(g):""}</section>
+   <section class="panel detail" aria-label="ゲスト詳細">${g?guestDetail(g):'<div class="empty">検索に合うゲストがいません。名前かメールアドレスの一部で探してください。</div>'}</section>
   </div>`;
 }
 function guestDetail(g){
   const u=me();
   const other=g.handler&&g.handler!==u.name;
   const lockHtml = g.handler
-    ? `<div class="lock ${other?"c-warn":"c-river"}">${other?`⚠ <b>${esc(g.handler)}さんが対応中です。</b>二重対応を防ぐため返信欄はロックしています。`:`あなた（${esc(u.name)}）が対応中です。`}
-        ${other?`<button type="button" class="btn ghost" data-act="takeover">担当を引き継ぐ</button>`:`<button type="button" class="btn ghost" data-act="release">担当を外す</button>`}</div>`
+    ? (other&&S.confirmTake
+        ? `<div class="lock c-warn"><b>${esc(g.handler)}さんから担当を引き継ぎますか？</b>引き継ぐと${esc(g.handler)}さんの画面では返信欄がロックされ、担当の記録に残ります。
+            <button type="button" class="btn" data-act="takeover-ok">引き継ぐ</button><button type="button" class="btn ghost" data-act="takeover-cancel">やめる</button></div>`
+        : `<div class="lock ${other?"c-warn":"c-river"}">${other?`⚠ <b>${esc(g.handler)}さんが担当です。</b>二重対応を防ぐため返信欄はロックしています。`:`あなた（${esc(u.name)}）が担当です。`}
+        ${other?`<button type="button" class="btn ghost" data-act="takeover">担当を引き継ぐ</button>`:`<button type="button" class="btn ghost" data-act="release">担当を外す</button>`}</div>`)
     : `<div class="lock c-bad"><b>担当者が決まっていません。</b><button type="button" class="btn" data-act="claim">自分が対応する</button></div>`;
+  const hist = g.tours.map(id=>tourById(id)).map(t=>`<tr><td><button type="button" class="link" data-tour="${t.id}">${esc(t.name)}</button></td><td class="mono">${range(t)}</td><td>${bookChip(g.booking)}</td><td>${payChip(g.pay)}</td></tr>`).join("");
   const ai=g.ai;
   return `
    <div class="d-head"><h1>${esc(g.name)}</h1>${bookChip(g.booking)}${payChip(g.pay)}${stateChip(g)}
@@ -364,6 +377,7 @@ function guestDetail(g){
    </div>
    <h2>参加ツアー</h2>
    <div class="tour-chips">${g.tours.length?g.tours.map(id=>{const t=tourById(id);return `<button type="button" class="tour-chip" data-tour="${t.id}"><b>${esc(t.name)}</b><span class="mono">${range(t)}</span>　ガイド ${esc(t.guide)}</button>`}).join(""):'<span class="muted">まだ参加ツアーはありません（問い合わせ段階）</span>'}</div>
+   ${hist?`<h2>予約・入金の履歴</h2><p class="muted" style="font-size:12px;margin:0 0 6px">デモではゲスト単位の状態を表示しています。本番はツアーごとに予約・入金を分けて管理します。</p><div class="tbl-wrap"><table><thead><tr><th>ツアー</th><th>日程</th><th>予約</th><th>入金</th></tr></thead><tbody>${hist}</tbody></table></div>`:""}
    <h2>メール履歴（共通アドレスとの送受信）</h2>
    <div class="thread">${g.emails.map(m=>mailHtml(m,g)).join("")}</div>
    <h2>返信</h2>
@@ -374,9 +388,10 @@ function guestDetail(g){
      <div class="compose-bar">
        <button type="button" class="btn ghost" data-act="draft" ${other||!g.handler||!g.draft?"disabled":""}>AIで下書き</button>
        <button type="button" class="btn" data-act="send" ${other||!g.handler?"disabled":""}>送信（デモ）</button>
-       <span class="muted" style="font-size:12px">送信すると履歴に追加され、状態が「返信済」になります</span>
+       <span class="muted" style="font-size:12px">送信すると履歴に追加され、状態が「返信済」になります（担当はそのまま）</span>
      </div>
-   </div>`;
+   </div>
+   ${(g.log||[]).length?`<h2>担当の記録</h2><div class="tbl-wrap"><table><tbody>${g.log.map(l=>`<tr><td class="mono">${l.at}</td><td>${esc(l.text)}</td></tr>`).join("")}</tbody></table></div>`:""}`;
 }
 function mailHtml(m,g){
   let body=esc(m.body);
@@ -394,11 +409,11 @@ function viewTours(){
   const u=me();
   let list=TOURS.slice();
   if(S.tourFilter==="upcoming")list=list.filter(t=>t.start>=TODAY).slice(0,12);
-  const t=tourById(S.tour)||list[0];
+  const t=list.find(x=>x.id===S.tour)||list[0];S.tour=t.id;
   return `<div class="split">
    <section class="panel" aria-label="ツアー一覧">
      <div class="list-head"><select id="tf" aria-label="表示する範囲">
-       <option value="upcoming" ${S.tourFilter==="upcoming"?"selected":""}>近い開催回（12本）</option>
+       <option value="upcoming" ${S.tourFilter==="upcoming"?"selected":""}>近い開催回（年間${TOURS.length}本のうち12本）</option>
        <option value="all" ${S.tourFilter==="all"?"selected":""}>年間すべて（${TOURS.length}本）</option></select></div>
      <div class="list" role="listbox">${list.map(x=>{const st=tourStatus(x);return `
        <button type="button" class="row" role="option" aria-selected="${x.id===t.id}" data-tour="${x.id}">
@@ -429,25 +444,32 @@ function tourDetail(t){
 
 /* ---------- 画面：共通メール ---------- */
 function viewInbox(){
-  const rows=GUESTS.map(g=>({g,m:g.emails[g.emails.length-1]})).sort((a,b)=>b.m.at.localeCompare(a.m.at));
+  let rows=GUESTS.map(g=>({g,m:g.emails[g.emails.length-1]})).sort((a,b)=>b.m.at.localeCompare(a.m.at));
+  if(S.onlyOpen)rows=rows.filter(r=>unanswered(r.g));
   const open=GUESTS.filter(unanswered);
-  const late=open.filter(g=>hoursSince(lastIn(g).at)>=24&&!g.handler);
+  const staff=["佐藤","山本"].map(n=>({n,open:GUESTS.filter(g=>g.handler===n&&unanswered(g)).length,stale:GUESTS.filter(g=>g.handler===n&&stale(g)).length}));
   return `<div class="summary-strip">
      <div><b>${open.length}</b><span>返信待ちのゲスト</span></div>
-     <div><b style="color:var(--bad)">${late.length}</b><span>24時間以上・担当なし（返信漏れの恐れ）</span></div>
-     <div><b>${GUESTS.filter(g=>g.handler&&unanswered(g)).length}</b><span>担当者が対応中</span></div>
+     <div><b style="color:var(--bad)">${GUESTS.filter(late).length}</b><span>${STALE_H}時間以上・担当なし（返信漏れの恐れ）</span></div>
+     <div><b style="color:var(--warn)">${GUESTS.filter(stale).length}</b><span>担当はいるが${STALE_H}時間以上返信待ち</span></div>
      <div><b>${GUESTS.reduce((s,g)=>s+g.ai.todos.filter(t=>!t.done).length,0)}</b><span>AIが抽出した未対応事項</span></div>
+   </div>
+   ${me().role==="admin"?`<div class="panel" style="padding:12px 14px;margin-bottom:14px"><b>スタッフ別の対応状況（管理者だけに表示）</b>
+     <div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>スタッフ</th><th>担当中の返信待ち</th><th>うち${STALE_H}時間以上</th></tr></thead><tbody>${staff.map(s=>`<tr><td>${s.n}</td><td class="mono">${s.open}件</td><td class="mono">${s.stale}件</td></tr>`).join("")}</tbody></table></div></div>`:""}
+   <div class="compose-bar" style="margin:0 0 10px">
+     <label style="font-size:13px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="only-open" ${S.onlyOpen?"checked":""}>返信待ちだけ表示</label>
+     <button type="button" class="btn ghost" data-act="fetch" ${S.fetched?"disabled":""}>新着メールを取り込む（デモ）</button>
    </div>
    <section class="panel" aria-label="共通メールの受信箱">
      ${rows.map(({g,m})=>{const h=hoursSince(m.at);const needs=m.dir==="in";return `
      <div class="inbox-row">
        <div><button type="button" class="link" data-guest="${g.id}">${esc(g.name)}</button><div class="mono muted" style="font-size:12px">${m.at}${needs?`（${h}時間前）`:""}</div></div>
        <div class="ib-sub">${needs?"":"↩ "}${esc(m.subj)} — ${esc(g.ai.summary)}</div>
-       <div>${needs?(g.handler?`<span class="chip c-river">対応中：${esc(g.handler)}</span>`:`<span class="chip c-bad">${h>=24?"返信漏れ注意":"未対応"}</span>`):'<span class="chip c-ok">返信済</span>'}</div>
-       <div class="mono muted" style="font-size:12px">${g.ai.todos.filter(t=>!t.done).length}件</div>
-     </div>`}).join("")}
+       <div>${stateChip(g)}</div>
+       <div class="mono muted" style="font-size:12px">未対応 ${g.ai.todos.filter(t=>!t.done).length}件</div>
+     </div>`}).join("")||'<div class="empty">返信待ちのメールはありません</div>'}
    </section>
-   <p class="muted" style="font-size:12px">本番では Google Workspace の共通アドレスに届いたメールを自動で取り込み、送信元のメールアドレスでゲストへひも付けます。</p>`;
+   <p class="muted" style="font-size:12px">本番では Google Workspace の共通アドレスに届いたメールを自動で取り込み、送信元のメールアドレスでゲストへひも付けます。「新着メールを取り込む」はその動きを1通だけ再現します。</p>`;
 }
 
 /* ---------- 画面：ガイド ---------- */
@@ -456,13 +478,13 @@ function viewGuide(){
   const mine=TOURS.filter(t=>t.guide===guideName&&t.start>=TODAY).slice(0,3);
   return `<div class="guide-layout">
    <div class="phone" aria-label="ガイドのスマホ画面">
-     <div class="phone-top"><b>${esc(guideName)}さんの担当ツアー</b><div style="font-size:12px">本日 ${fmtDate(TODAY)}・担当分だけ表示</div></div>
+     <div class="phone-top"><b>${esc(guideName)}さんの担当ツアー</b><div style="font-size:12px">本日 ${fmtDate(TODAY)}・担当分だけ表示（近い3本）${me().role==="guide"?"":"（スタッフ画面からのプレビュー）"}</div></div>
      <div class="phone-body">${mine.map(t=>{const gs=guestsOf(t);return `
        <div class="g-card"><h3>${esc(t.name)}</h3><div class="mono muted" style="font-size:12px">${range(t)}・${paxOf(t)}名</div>
-         ${t.it.map((d,i)=>`<div class="day"><b>${i+1}日目</b><ol>${d.map(x=>`<li><span class="mono">${x[0]}</span><span>${esc(x[1])}</span></li>`).join("")}</ol></div>`).join("")}
+         ${t.it.map((d,i)=>`<div class="day"><b>${i+1}日目　<span class="mono">${fmtDate(addDays(t.start,i))}</span></b><ol>${d.map(x=>`<li><span class="mono">${x[0]}</span><span>${esc(x[1])}</span></li>`).join("")}</ol></div>`).join("")}
          ${t.hotels.length?`<div class="gp">宿：${t.hotels.map(h=>esc(h.n)).join("／")}</div>`:""}
          ${gs.map(g=>`<div class="gp"><b>${esc(g.name)}</b>（${g.pax}名・${esc(g.country)}）<div class="mono muted" style="font-size:12px">緊急連絡 ${esc(g.phone)}</div>${g.ai.requests.map(r=>`<div class="need">● ${esc(r.t)}</div>`).join("")}</div>`).join("")}
-         ${t.ext?`<div class="gp muted">ほか ${t.ext}名</div>`:""}
+         ${t.ext?`<div class="gp muted">ほか ${t.ext}名（このデモでは氏名・注意事項を省略。本番は全員分を表示）</div>`:""}
        </div>`}).join("")||'<div class="empty">担当ツアーはありません</div>'}
      </div>
    </div>
@@ -483,7 +505,7 @@ function render(){
   document.querySelectorAll("nav.tabs button").forEach(b=>{
     const v=b.dataset.view;b.hidden=!allowed(v);
     b.setAttribute("aria-current",v===S.view?"page":"false");
-    if(v==="inbox"){const n=GUESTS.filter(g=>unanswered(g)&&!g.handler).length;b.innerHTML=`共通メール${n?`<span class="cnt">${n}</span>`:""}`}
+    if(v==="inbox"){const n=GUESTS.filter(g=>unanswered(g)&&!g.handler).length;b.innerHTML=`共通メール${n?`<span class="cnt">${n}</span>`:""}`;b.title=n?`担当者が決まっていない返信待ち ${n}件`:"担当者が決まっていない返信待ちはありません"}
   });
   const app=document.getElementById("app");
   app.innerHTML = S.view==="guests"?viewGuests():S.view==="tours"?viewTours():S.view==="inbox"?viewInbox():viewGuide();
@@ -492,25 +514,43 @@ function render(){
 document.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.view){S.view=b.dataset.view;S.flashMail=null;render();return}
-  if(b.dataset.guest){S.guest=b.dataset.guest;S.view="guests";S.flashMail=null;render();window.scrollTo({top:0});return}
+  if(b.dataset.guest){S.confirmTake=false;S.guest=b.dataset.guest;S.view="guests";S.flashMail=null;render();window.scrollTo({top:0});return}
   if(b.dataset.tour){S.tour=b.dataset.tour;S.view="tours";render();window.scrollTo({top:0});return}
   if(b.dataset.src){S.flashMail=b.dataset.src;render();const el=document.getElementById("mail-"+b.dataset.src);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});return}
-  const g=guestById(S.guest);const act=b.dataset.act;if(!act||!g)return;
+  const act=b.dataset.act;
+  if(act==="fetch"){
+    const h=guestById("g6");
+    h.emails.push({id:"m24",dir:"in",at:`${TODAY} 11:40`,subj:"Re: Private tour in December?",body:"Hi again,\nMy sister will join me, so we will be 2 people.\nCould the private tour start on 11 December?"});
+    h.pax=2;
+    h.ai.summary="【新着 10/26】妹が加わり2名に変更、12/11開始を希望。もとは12/10〜16の四国旅行で、祖谷のかずら橋を含む3日間の貸切ツアー（予算 約15万円）の新規問い合わせ。前回（10/23）から未返信が続いている。";
+    h.ai.todos.push({t:"2名・12/11開始で貸切3日プランを提案",src:"m24",q:"Could the private tour start on 11 December?",done:false});
+    S.fetched=true;render();toast("送信元 hannah.lee@example.invalid で Hannah Lee さんにひも付けました。AI要約と未対応事項も更新しました");return}
+  const g=guestById(S.guest);if(!act||!g)return;
   const u=me();
-  if(act==="claim"||act==="takeover"){g.handler=u.name;g.state="対応中";render();toast(`${u.name}さんの担当にしました。ほかのスタッフには「対応中」と表示されます`)}
-  else if(act==="release"){g.handler=null;g.state=unanswered(g)?"未対応":"返信済";render();toast("担当を外しました")}
+  if(act==="claim"){g.handler=u.name;logAdd(g,`${u.name}さんが担当になりました`);render();toast(`${u.name}さんの担当にしました。ほかのスタッフの画面では返信欄がロックされます`)}
+  else if(act==="takeover"){S.confirmTake=true;render()}
+  else if(act==="takeover-cancel"){S.confirmTake=false;render()}
+  else if(act==="takeover-ok"){const prev=g.handler;g.handler=u.name;S.confirmTake=false;logAdd(g,`${prev}さん → ${u.name}さんへ担当を引き継ぎました`);render();toast(`${prev}さんから引き継ぎました。担当の記録に残しました`)}
+  else if(act==="release"){logAdd(g,`${g.handler}さんが担当を外れました`);g.handler=null;render();toast("担当を外しました")}
   else if(act==="draft"){document.getElementById("reply").value=g.draft;toast("未対応事項に答える下書きを入れました。内容を確認してから送信してください")}
   else if(act==="send"){
     const v=document.getElementById("reply").value.trim();
     if(!v){toast("返信文が空です。本文を入力してください");return}
     const last=lastIn(g);
+    /* AI下書きをそのまま送った時は下書きが答えた未対応事項を全部完了に。手で書いた時は、まだ返していない受信メール由来の事項だけ */
+    const usedDraft=g.draft&&v===g.draft.trim();
+    const lastOutIdx=g.emails.map(m=>m.dir).lastIndexOf("out");
+    const pending=new Set(g.emails.slice(lastOutIdx+1).map(m=>m.id));
     g.emails.push({id:"m"+Date.now(),dir:"out",at:`${TODAY} 12:00`,subj:"Re: "+last.subj.replace(/^Re: /,""),body:v+"\n\n— "+u.name});
-    g.ai.todos.forEach(t=>{if(t.src===last.id)t.done=true});
-    g.state="返信済";g.handler=null;S.flashMail=null;render();toast("履歴に追加しました（デモのため実際には送信していません）");
+    g.ai.todos.forEach(t=>{if(usedDraft||pending.has(t.src))t.done=true});
+    logAdd(g,`${u.name}さんが返信しました`);
+    if(!/（\d+\/\d+ 返信済）$/.test(g.ai.summary))g.ai.summary+=`（${fmtDate(TODAY)} 返信済）`;
+    S.flashMail=null;render();toast("履歴に追加しました（デモのため実際には送信していません）");
   }
 });
 document.addEventListener("change",e=>{
-  if(e.target.id==="role"){S.user=e.target.value;if(me().role==="guide")S.view="guide";render();toast(`${me().name}（${me().label}）でログインしました`)}
+  if(e.target.id==="only-open"){S.onlyOpen=e.target.checked;render()}
+  if(e.target.id==="role"){S.user=e.target.value;S.confirmTake=false;if(me().role==="guide")S.view="guide";render();toast(`${me().name}（${me().label}）でログインしました`)}
   if(e.target.id==="tf"){S.tourFilter=e.target.value;render()}
   if(e.target.dataset&&e.target.dataset.todo!==undefined){const g=guestById(S.guest);g.ai.todos[+e.target.dataset.todo].done=e.target.checked;render()}
 });
