@@ -107,6 +107,8 @@ with sync_playwright() as p:
     d.goto(url)
     d.wait_for_timeout(600)
     d.screenshot(path=str(shots / "09_dark.png"))
+    bg = d.evaluate("getComputedStyle(document.body).backgroundColor")
+    check(f"ダークモードの端末でも白ベース({bg})", bg == "rgb(243, 246, 246)")
     b.close()
 
 check("JSエラー0件" + (f" {errors}" if errors else ""), not errors)

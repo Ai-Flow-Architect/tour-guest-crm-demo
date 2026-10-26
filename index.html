@@ -19,14 +19,8 @@
   --f-body:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1a1c; --surface:#16252a; --ink:#e3eeef; --muted:#9db1b4; --line:#2a3f44;
-  --river:#5fc0cc; --river-soft:#16363b; --sand:#e0a866; --sand-soft:#3a2c1c;
-  --ok:#73c995; --ok-soft:#173826; --warn:#e8b25c; --warn-soft:#3b2d14; --bad:#f08a80; --bad-soft:#3d1c19; --hl:#5a4d10; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0f1a1c; --surface:#16252a; --ink:#e3eeef; --muted:#9db1b4; --line:#2a3f44;
-  --river:#5fc0cc; --river-soft:#16363b; --sand:#e0a866; --sand-soft:#3a2c1c;
-  --ok:#73c995; --ok-soft:#173826; --warn:#e8b25c; --warn-soft:#3b2d14; --bad:#f08a80; --bad-soft:#3d1c19; --hl:#5a4d10; color-scheme:dark}
+/* 客様に出すデモは白ベースで固定（取締役確定 2026-10-26「暗いと少し怪しい」）＝端末がダークモードでも暗くしない */
+:root,:root[data-theme="dark"]{color-scheme:light}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.65}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
