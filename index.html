@@ -317,13 +317,16 @@ function unanswered(g){const l=g.emails[g.emails.length-1];return l.dir==="in"}
 function hoursSince(at){return Math.round((new Date(TODAY+"T12:00:00")-new Date(at.replace(" ","T")+":00"))/36e5)}
 /* 状態はデータから導く：返信待ちか（最後が受信か）× 担当者がいるか × 24時間を過ぎたか */
 const STALE_H=24;
-function stale(g){return unanswered(g)&&g.handler&&hoursSince(lastIn(g).at)>=STALE_H}
-function late(g){return unanswered(g)&&!g.handler&&hoursSince(lastIn(g).at)>=STALE_H}
+/* 待ち時間は「前回こちらが返してから最初に届いた受信」から数える（後から追いメールが来ても古い未返信を見落とさない） */
+function firstPendingIn(g){const i=g.emails.map(m=>m.dir).lastIndexOf("out");return g.emails.slice(i+1).find(m=>m.dir==="in")}
+function waitH(g){const m=firstPendingIn(g);return m?hoursSince(m.at):0}
+function stale(g){return unanswered(g)&&g.handler&&waitH(g)>=STALE_H}
+function late(g){return unanswered(g)&&!g.handler&&waitH(g)>=STALE_H}
 function stateChip(g){
   if(!unanswered(g))return `<span class="chip c-ok">返信済${g.handler?`（担当 ${esc(g.handler)}）`:""}</span>`;
-  if(stale(g))return `<span class="chip c-warn">⚠ 返信待ち${hoursSince(lastIn(g).at)}時間：${esc(g.handler)}</span>`;
+  if(stale(g))return `<span class="chip c-warn">⚠ 返信待ち${waitH(g)}時間：${esc(g.handler)}</span>`;
   if(g.handler)return `<span class="chip c-river">対応中：${esc(g.handler)}</span>`;
-  if(late(g))return `<span class="chip c-bad">⚠ 返信漏れの恐れ${hoursSince(lastIn(g).at)}時間・担当なし</span>`;
+  if(late(g))return `<span class="chip c-bad">⚠ 返信漏れの恐れ${waitH(g)}時間・担当なし</span>`;
   return '<span class="chip c-bad">未対応・担当なし</span>';
 }
 function logAdd(g,text){(g.log=g.log||[]).push({at:`${TODAY} 12:00`,text})}
@@ -341,6 +344,7 @@ function viewGuests(){
   return `<div class="split">
    <section class="panel" aria-label="ゲスト一覧">
      <div class="list-head"><input id="q" type="search" placeholder="名前・メールで検索" value="${esc(S.q)}" aria-label="ゲスト検索"></div>
+     <div class="muted" style="font-size:11.5px;padding:6px 12px;border-bottom:1px solid var(--line)">赤＝担当者がいない返信待ち／橙＝担当はいるが24時間以上返信待ち／緑＝返信済</div>
      <div class="list" role="listbox">${list.map(x=>`
        <button type="button" class="row" role="option" aria-selected="${x.id===g.id}" data-guest="${x.id}">
          <div class="l1"><span>${esc(x.name)}</span>${stateChip(x)}</div>
@@ -372,7 +376,7 @@ function guestDetail(g){
      <p>${esc(ai.summary)}</p>
      <div class="ai-cols">
        <div><h3>要望・特記事項</h3><ul>${ai.requests.map(r=>`<li><span>${esc(r.t)}</span><button type="button" class="src" data-src="${r.src}">原文</button></li>`).join("")}</ul></div>
-       <div><h3>未対応事項</h3><ul>${ai.todos.map((r,i)=>`<li class="${r.done?"done":""}"><label><input type="checkbox" data-todo="${i}" ${r.done?"checked":""} ${u.role==="guide"?"disabled":""}><span>${esc(r.t)}</span></label><button type="button" class="src" data-src="${r.src}">原文</button></li>`).join("")}</ul></div>
+       <div><h3>未対応事項</h3><ul>${ai.todos.map((r,i)=>`<li class="${r.done?"done":""}"><label><input type="checkbox" data-todo="${i}" ${r.done?"checked":""} ${u.role==="guide"||other?"disabled":""}><span>${esc(r.t)}</span></label><button type="button" class="src" data-src="${r.src}">原文</button></li>`).join("")}</ul></div>
      </div>
    </div>
    <h2>参加ツアー</h2>
@@ -386,7 +390,7 @@ function guestDetail(g){
      <label for="reply" class="muted" style="font-size:12px">宛先 <span class="mono">${esc(g.email)}</span>・差出人 共通アドレス（署名：${esc(u.name)}）</label>
      <textarea id="reply" ${other||!g.handler?"disabled":""} placeholder="${g.draft?"「AIで下書き」を押すと、未対応事項に答える下書きが入ります":"返信文を入力"}"></textarea>
      <div class="compose-bar">
-       <button type="button" class="btn ghost" data-act="draft" ${other||!g.handler||!g.draft?"disabled":""}>AIで下書き</button>
+       <button type="button" class="btn ghost" data-act="draft" ${other||!g.handler||!g.draft?"disabled":""} title="${g.draft?"未対応事項に答える下書きを入れます":"返信待ちのメールが無いため下書きはありません"}">AIで下書き</button>
        <button type="button" class="btn" data-act="send" ${other||!g.handler?"disabled":""}>送信（デモ）</button>
        <span class="muted" style="font-size:12px">送信すると履歴に追加され、状態が「返信済」になります（担当はそのまま）</span>
      </div>
@@ -449,7 +453,7 @@ function viewInbox(){
   const open=GUESTS.filter(unanswered);
   const staff=["佐藤","山本"].map(n=>({n,open:GUESTS.filter(g=>g.handler===n&&unanswered(g)).length,stale:GUESTS.filter(g=>g.handler===n&&stale(g)).length}));
   return `<div class="summary-strip">
-     <div><b>${open.length}</b><span>返信待ちのゲスト</span></div>
+     <div><b>${open.length}</b><span>返信待ちのゲスト（うち担当者未定 ${open.filter(g=>!g.handler).length}＝タブの赤い数字）</span></div>
      <div><b style="color:var(--bad)">${GUESTS.filter(late).length}</b><span>${STALE_H}時間以上・担当なし（返信漏れの恐れ）</span></div>
      <div><b style="color:var(--warn)">${GUESTS.filter(stale).length}</b><span>担当はいるが${STALE_H}時間以上返信待ち</span></div>
      <div><b>${GUESTS.reduce((s,g)=>s+g.ai.todos.filter(t=>!t.done).length,0)}</b><span>AIが抽出した未対応事項</span></div>
@@ -469,7 +473,7 @@ function viewInbox(){
        <div class="mono muted" style="font-size:12px">未対応 ${g.ai.todos.filter(t=>!t.done).length}件</div>
      </div>`}).join("")||'<div class="empty">返信待ちのメールはありません</div>'}
    </section>
-   <p class="muted" style="font-size:12px">本番では Google Workspace の共通アドレスに届いたメールを自動で取り込み、送信元のメールアドレスでゲストへひも付けます。「新着メールを取り込む」はその動きを1通だけ再現します。</p>`;
+   <p class="muted" style="font-size:12px">本番では Google Workspace の共通アドレスに届いたメールを自動で取り込み、送信元のメールアドレスでゲストへひも付けます。「新着メールを取り込む」はその動きを1通だけ再現します。デモの一覧はゲストごとの最新1通にまとめています。</p>`;
 }
 
 /* ---------- 画面：ガイド ---------- */
@@ -514,8 +518,8 @@ function render(){
 document.addEventListener("click",e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.view){S.view=b.dataset.view;S.flashMail=null;render();return}
-  if(b.dataset.guest){S.confirmTake=false;S.guest=b.dataset.guest;S.view="guests";S.flashMail=null;render();window.scrollTo({top:0});return}
-  if(b.dataset.tour){S.tour=b.dataset.tour;S.view="tours";render();window.scrollTo({top:0});return}
+  if(b.dataset.guest){S.confirmTake=false;S.q="";S.guest=b.dataset.guest;S.view="guests";S.flashMail=null;render();window.scrollTo({top:0});return}
+  if(b.dataset.tour){S.tour=b.dataset.tour;if(S.tourFilter==="upcoming"&&!TOURS.filter(t=>t.start>=TODAY).slice(0,12).some(t=>t.id===S.tour))S.tourFilter="all";S.view="tours";render();window.scrollTo({top:0});return}
   if(b.dataset.src){S.flashMail=b.dataset.src;render();const el=document.getElementById("mail-"+b.dataset.src);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});return}
   const act=b.dataset.act;
   if(act==="fetch"){
@@ -524,6 +528,7 @@ document.addEventListener("click",e=>{
     h.pax=2;
     h.ai.summary="【新着 10/26】妹が加わり2名に変更、12/11開始を希望。もとは12/10〜16の四国旅行で、祖谷のかずら橋を含む3日間の貸切ツアー（予算 約15万円）の新規問い合わせ。前回（10/23）から未返信が続いている。";
     h.ai.todos.push({t:"2名・12/11開始で貸切3日プランを提案",src:"m24",q:"Could the private tour start on 11 December?",done:false});
+    h.draft="Dear Hannah,\n\nThank you for your messages, and sorry for the late reply.\n\nYes, a private 3-day tour for 2 people starting on 11 December is possible, including the Iya Valley vine bridge. A sample plan within your budget of about 150,000 JPY is attached.\n\nPlease let us know if you would like any changes.";
     S.fetched=true;render();toast("送信元 hannah.lee@example.invalid で Hannah Lee さんにひも付けました。AI要約と未対応事項も更新しました");return}
   const g=guestById(S.guest);if(!act||!g)return;
   const u=me();
@@ -544,7 +549,8 @@ document.addEventListener("click",e=>{
     g.emails.push({id:"m"+Date.now(),dir:"out",at:`${TODAY} 12:00`,subj:"Re: "+last.subj.replace(/^Re: /,""),body:v+"\n\n— "+u.name});
     g.ai.todos.forEach(t=>{if(usedDraft||pending.has(t.src))t.done=true});
     logAdd(g,`${u.name}さんが返信しました`);
-    if(!/（\d+\/\d+ 返信済）$/.test(g.ai.summary))g.ai.summary+=`（${fmtDate(TODAY)} 返信済）`;
+    g.ai.summary=g.ai.summary.split("。").filter(x=>x&&!/未返信|返信漏れ/.test(x)).join("。")+"。";
+    if(!g.repliedNoted){g.ai.summary+=`${fmtDate(TODAY)} ${u.name}さんが返信済。`;g.repliedNoted=true}
     S.flashMail=null;render();toast("履歴に追加しました（デモのため実際には送信していません）");
   }
 });
@@ -554,7 +560,10 @@ document.addEventListener("change",e=>{
   if(e.target.id==="tf"){S.tourFilter=e.target.value;render()}
   if(e.target.dataset&&e.target.dataset.todo!==undefined){const g=guestById(S.guest);g.ai.todos[+e.target.dataset.todo].done=e.target.checked;render()}
 });
-document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const pos=e.target.selectionStart;render();const q=document.getElementById("q");q.focus();q.setSelectionRange(pos,pos)}});
+let composing=false;
+document.addEventListener("compositionstart",e=>{if(e.target.id==="q")composing=true});
+document.addEventListener("compositionend",e=>{if(e.target.id==="q"){composing=false;e.target.dispatchEvent(new Event("input",{bubbles:true}))}});
+document.addEventListener("input",e=>{if(e.target.id==="q"&&!composing){S.q=e.target.value;const pos=e.target.selectionStart;render();const q=document.getElementById("q");q.focus();q.setSelectionRange(pos,pos)}});
 (function init(){
   const h=(location.hash||"").slice(1);
   if(guestById(h)){S.view="guests";S.guest=h}
