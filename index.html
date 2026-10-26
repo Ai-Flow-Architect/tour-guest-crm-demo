@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ツアー×ゲスト管理デモ</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Shippori+Mincho+B1:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* レイアウト: 上に固定の帯（ログイン中の人と画面切替）／左に一覧・右に詳細の2段。スマホでは1段に積む */
+:root{
+  --bg:#f3f6f6; --surface:#ffffff; --ink:#17282c; --muted:#5b6f73; --line:#d6e1e2;
+  --river:#0f6b78; --river-soft:#e1f0f1; --sand:#b9772f; --sand-soft:#f7ecdf;
+  --ok:#2c7a4b; --ok-soft:#e3f2e8; --warn:#a3610b; --warn-soft:#fbefd9; --bad:#b3362c; --bad-soft:#fbe4e1;
+  --hl:#fff2a8;
+  --f-display:"Shippori Mincho B1","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1a1c; --surface:#16252a; --ink:#e3eeef; --muted:#9db1b4; --line:#2a3f44;
+  --river:#5fc0cc; --river-soft:#16363b; --sand:#e0a866; --sand-soft:#3a2c1c;
+  --ok:#73c995; --ok-soft:#173826; --warn:#e8b25c; --warn-soft:#3b2d14; --bad:#f08a80; --bad-soft:#3d1c19; --hl:#5a4d10; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1a1c; --surface:#16252a; --ink:#e3eeef; --muted:#9db1b4; --line:#2a3f44;
+  --river:#5fc0cc; --river-soft:#16363b; --sand:#e0a866; --sand-soft:#3a2c1c;
+  --ok:#73c995; --ok-soft:#173826; --warn:#e8b25c; --warn-soft:#3b2d14; --bad:#f08a80; --bad-soft:#3d1c19; --hl:#5a4d10; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.65}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--river);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* 上の帯 */
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-in{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;padding-block:10px;max-width:1280px;margin:0 auto}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand b{font-family:var(--f-display);font-size:19px;font-weight:800;letter-spacing:.02em}
+.brand small{color:var(--muted);font-size:12px}
+nav.tabs{display:flex;gap:4px;flex-wrap:wrap}
+nav.tabs button{border:1px solid transparent;background:none;padding:6px 12px;border-radius:6px;color:var(--muted)}
+nav.tabs button[aria-current="page"]{background:var(--river-soft);color:var(--river);border-color:var(--river-soft);font-weight:700}
+nav.tabs .cnt{display:inline-block;margin-left:6px;min-width:18px;padding:0 5px;border-radius:9px;background:var(--bad);color:var(--surface);font-size:11px;text-align:center}
+.who{display:flex;align-items:center;gap:8px;font-size:13px}
+.who select{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:5px 8px}
+.demo-note{background:var(--sand-soft);color:var(--ink);font-size:12px}
+.demo-note div{max-width:1280px;margin:0 auto;padding-block:6px}
+
+main{max-width:1280px;margin:0 auto;padding-block:18px 48px}
+.split{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.split{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.list-head{display:flex;gap:8px;align-items:center;padding:12px;border-bottom:1px solid var(--line)}
+.list-head input,.list-head select{flex:1;min-width:0;border:1px solid var(--line);border-radius:6px;padding:6px 9px;background:var(--bg)}
+.list{max-height:72vh;overflow:auto}
+.row{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;padding:10px 12px}
+.row:hover{background:var(--river-soft)}
+.row[aria-selected="true"]{background:var(--river-soft);box-shadow:inset 3px 0 0 var(--river)}
+.row .l1{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.row .l2{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:3px}
+
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap;font-weight:400}
+.c-ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.c-warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.c-bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+.c-river{background:var(--river-soft);color:var(--river);border-color:transparent}
+.c-sand{background:var(--sand-soft);color:var(--sand);border-color:transparent}
+
+.detail{padding:20px;min-width:0}
+.d-head{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+.d-head h1{font-family:var(--f-display);font-size:26px;font-weight:800;margin:0;line-height:1.25;text-wrap:balance}
+.d-head .sub{color:var(--muted);font-size:13px;width:100%}
+h2{font-size:13px;letter-spacing:.08em;color:var(--muted);margin:22px 0 8px;font-weight:700}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.kv div{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kv dt{font-size:11.5px;color:var(--muted)}
+.kv dd{margin:0;font-weight:700}
+
+.ai{border:1px solid var(--river);border-radius:10px;background:var(--river-soft);padding:14px 16px}
+.ai .ai-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--river);font-weight:700;margin-bottom:6px}
+.ai p{margin:0 0 10px}
+.ai-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.ai-cols h3{font-size:12.5px;margin:0 0 4px}
+.ai ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.ai li{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 9px;display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.ai li.done span{text-decoration:line-through;color:var(--muted)}
+.src{border:0;background:none;color:var(--river);font-size:12px;text-decoration:underline;white-space:nowrap;padding:0}
+.ai li label{display:flex;gap:6px;align-items:flex-start}
+
+.thread{display:grid;gap:10px}
+.mail{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)}
+.mail.out{background:var(--bg)}
+.mail .mh{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:space-between;font-size:12px;color:var(--muted)}
+.mail .mh b{color:var(--ink)}
+.mail pre{white-space:pre-wrap;font-family:var(--f-body);margin:6px 0 0;font-size:13.5px}
+.mail.flash{box-shadow:0 0 0 3px var(--hl)}
+mark{background:var(--hl);color:inherit;padding:0 2px;border-radius:2px}
+
+.lock{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-radius:8px;padding:9px 12px;font-size:13px}
+.btn{border:1px solid var(--river);background:var(--river);color:var(--surface);border-radius:7px;padding:6px 13px;font-weight:700}
+.btn.ghost{background:var(--surface);color:var(--river)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface)}
+.compose-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;z-index:20}
+
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11.5px;color:var(--muted);font-weight:700;background:var(--bg);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+a.link,button.link{color:var(--river);font-weight:700;text-decoration:underline;border:0;background:none;padding:0;text-align:left}
+
+.tour-chips{display:flex;flex-wrap:wrap;gap:8px}
+.tour-chip{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);text-align:left;min-width:0}
+.tour-chip b{display:block;color:var(--river)}
+
+/* 受信箱 */
+.inbox-row{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) auto auto;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.inbox-row:last-child{border-bottom:0}
+@media (max-width:760px){.inbox-row{grid-template-columns:minmax(0,1fr) auto}.inbox-row .ib-sub{grid-column:1/-1;order:3}}
+.ib-sub{color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.summary-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.summary-strip div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.summary-strip b{display:block;font-size:22px;font-family:var(--f-mono)}
+.summary-strip span{font-size:12px;color:var(--muted)}
+
+/* ガイド用（スマホ） */
+.phone{max-width:400px;margin:0 auto;border:1px solid var(--line);border-radius:22px;background:var(--surface);overflow:hidden}
+.phone-top{background:var(--river);color:var(--surface);padding:14px 16px}
+.phone-top b{font-family:var(--f-display);font-size:18px}
+.phone-body{padding:14px 14px 22px;display:grid;gap:12px}
+.g-card{border:1px solid var(--line);border-radius:12px;padding:12px}
+.g-card h3{margin:0 0 4px;font-size:15px}
+.day{border-left:2px solid var(--river);padding-left:10px;margin-top:8px}
+.day b{font-size:12.5px;color:var(--river)}
+.day ol{margin:4px 0 0;padding:0;list-style:none;font-size:13px;display:grid;gap:2px}
+.day li{display:grid;grid-template-columns:44px 1fr;gap:6px}
+.gp{border-top:1px dashed var(--line);padding-top:8px;margin-top:8px;font-size:13px}
+.gp .need{color:var(--bad);font-weight:700}
+.guide-layout{display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:860px){.guide-layout{grid-template-columns:minmax(0,1fr)}}
+.explain{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.explain h3{font-family:var(--f-display);margin:0 0 6px;font-size:17px}
+.explain ul{margin:6px 0 0;padding-left:18px}
+.muted{color:var(--muted)}
+.empty{padding:28px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+
+<header class="top">
+  <div class="top-in wrap">
+    <div class="brand"><b>ツアー×ゲスト管理</b><small>クラウド型 管理画面（デモ）</small></div>
+    <nav class="tabs" aria-label="画面">
+      <button type="button" data-view="guests" id="tab-guests">ゲスト</button>
+      <button type="button" data-view="tours" id="tab-tours">ツアー</button>
+      <button type="button" data-view="inbox" id="tab-inbox">共通メール</button>
+      <button type="button" data-view="guide" id="tab-guide">ガイド画面</button>
+    </nav>
+    <div class="who"><label for="role">ログイン中</label>
+      <select id="role">
+        <option value="sato">佐藤（顧客対応）</option>
+        <option value="yamamoto">山本（顧客対応）</option>
+        <option value="mori">森（管理者）</option>
+        <option value="tanaka">田中（ガイド）</option>
+      </select>
+    </div>
+  </div>
+  <div class="demo-note"><div class="wrap">デモ用の架空データです（ゲスト・メール・ツアーはすべて見本）。メール送信・AI要約は画面上の再現で、実際には送信されません。</div></div>
+</header>
+
+<main class="wrap" id="app"></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const TODAY = "2026-10-26";
+const USERS = {
+  sato:{name:"佐藤",role:"staff",label:"顧客対応"},
+  yamamoto:{name:"山本",role:"staff",label:"顧客対応"},
+  mori:{name:"森",role:"admin",label:"管理者"},
+  tanaka:{name:"田中",role:"guide",label:"ガイド"}
+};
+
+/* ---------- 見本データ：ゲスト（メールアドレスが基本キー） ---------- */
+const GUESTS = [
+ {id:"g1",name:"Emma Wilson",country:"イギリス",email:"emma.wilson@example.invalid",phone:"+44 20 0000 0001",pax:2,booking:"予約確定",pay:"入金済",tours:["t03"],handler:"佐藤",state:"対応中",
+  emails:[
+   {id:"m1",dir:"in",at:"2026-10-12 08:41",subj:"Shimanto canoe tour - availability",body:"Hello,\nMy husband and I would like to join the Shimanto River Canoe & Chinka-bashi tour on 14 November. Is there space for 2 people?\nWe are both beginners at canoeing."},
+   {id:"m2",dir:"out",at:"2026-10-12 15:02",subj:"Re: Shimanto canoe tour - availability",body:"Dear Emma,\nThank you for your inquiry. We have space for 2 on 14 November. Beginners are very welcome; our guide gives a 30-minute lesson before launching.\nThe price is 48,000 JPY per person."},
+   {id:"m3",dir:"in",at:"2026-10-13 09:20",subj:"Re: Shimanto canoe tour - availability",body:"Great, please book us!\nOne thing: I am vegetarian (no meat or fish, eggs are OK). Could the dinner at the ryokan be arranged?\nAlso, my husband has a slight knee problem, so we would prefer not to do long uphill walks."},
+   {id:"m4",dir:"out",at:"2026-10-14 10:30",subj:"Booking confirmed - Shimanto 14 Nov",body:"Dear Emma,\nYour booking for 2 is confirmed. Please find the payment link below.\nWe have informed the ryokan about the vegetarian dinner."},
+   {id:"m5",dir:"in",at:"2026-10-24 21:05",subj:"Payment done + pickup question",body:"Hi, we paid yesterday.\nCould you pick us up at Nakamura Station instead of the hotel? Our train arrives at 9:10.\nAlso, is there anywhere to buy a waterproof phone case nearby?"}
+  ],
+  ai:{summary:"11/14 四万十カヌー（2名）予約確定・入金済。妻はベジタリアン（卵は可）、夫は膝に不安があり長い登りは避けたい。最新メール（10/24）で中村駅9:10着の送迎変更と防水スマホケースの購入場所を質問中＝未返信。",
+   requests:[{t:"ベジタリアン食（肉・魚なし／卵は可）",src:"m3",q:"I am vegetarian (no meat or fish, eggs are OK)"},{t:"夫の膝に配慮＝長い登りの徒歩を避ける",src:"m3",q:"my husband has a slight knee problem"}],
+   todos:[{t:"送迎場所を中村駅 9:10着に変更できるか回答",src:"m5",q:"Could you pick us up at Nakamura Station instead of the hotel? Our train arrives at 9:10.",done:false},{t:"防水スマホケースの購入場所を案内",src:"m5",q:"is there anywhere to buy a waterproof phone case nearby?",done:false},{t:"旅館へベジタリアン夕食を手配",src:"m3",q:"Could the dinner at the ryokan be arranged?",done:true}]},
+  draft:"Dear Emma,\n\nThank you for your payment. We have confirmed it.\n\nYes, we can pick you up at Nakamura Station. Our guide Tanaka will wait at the ticket gate at 9:10 with a sign.\n\nWaterproof phone cases are sold at the convenience store next to the station, and we also lend them free of charge at the canoe base.\n\nWe look forward to seeing you on 14 November."},
+ {id:"g2",name:"Lukas Becker",country:"ドイツ",email:"lukas.becker@example.invalid",phone:"+49 30 0000 0002",pax:1,booking:"予約確定",pay:"未入金",tours:["t03","t07"],handler:null,state:"未対応",
+  emails:[
+   {id:"m6",dir:"in",at:"2026-10-18 07:15",subj:"Two tours in November",body:"Hi,\nI want to book both the Shimanto canoe tour (14 Nov) and the Muroto Geopark tour (28 Nov). Solo traveller.\nI have a nut allergy (peanuts and almonds) - this is important."},
+   {id:"m7",dir:"out",at:"2026-10-18 13:40",subj:"Re: Two tours in November",body:"Dear Lukas,\nBoth tours are available. We have noted your nut allergy and will share it with the restaurants and the guide.\nPlease complete payment by 31 October."},
+   {id:"m8",dir:"in",at:"2026-10-25 18:22",subj:"Re: Two tours in November",body:"Thanks. Can I pay by bank transfer from Germany instead of credit card?\nAnd is a single room supplement needed for both tours?"}
+  ],
+  ai:{summary:"11/14 四万十カヌー＋11/28 室戸ジオパークの2本を1名で予約。ナッツアレルギー（ピーナッツ・アーモンド）あり＝重要。入金期限10/31で未入金。10/25のメールで海外送金での支払い可否と一人部屋追加料金を質問中＝未返信。",
+   requests:[{t:"ナッツアレルギー（ピーナッツ・アーモンド）＝食事手配で必須共有",src:"m6",q:"I have a nut allergy (peanuts and almonds) - this is important."}],
+   todos:[{t:"海外送金で支払えるか回答",src:"m8",q:"Can I pay by bank transfer from Germany instead of credit card?",done:false},{t:"一人部屋追加料金（2本分）を回答",src:"m8",q:"is a single room supplement needed for both tours?",done:false},{t:"入金期限 10/31 の確認",src:"m7",q:"Please complete payment by 31 October.",done:false}]},
+  draft:"Dear Lukas,\n\nThank you for your message.\n\nBank transfer from Germany is possible. We will send our bank details (IBAN/SWIFT) separately. Please note that transfer fees are covered by the sender.\n\nA single room supplement applies to the Muroto tour only (6,000 JPY). The Shimanto tour has no supplement.\n\nThe payment deadline remains 31 October."},
+ {id:"g3",name:"Chen Wei",country:"台湾",email:"chen.wei@example.invalid",phone:"+886 2 0000 0003",pax:4,booking:"仮予約",pay:"未入金",tours:["t05"],handler:"山本",state:"対応中",
+  emails:[
+   {id:"m9",dir:"in",at:"2026-10-20 11:03",subj:"Family tour Niyodo Blue",body:"Hello, we are a family of 4 (2 adults, children aged 6 and 9).\nIs the Niyodo Blue gorge hike suitable for children? We would like the 21 November date."},
+   {id:"m10",dir:"out",at:"2026-10-21 09:12",subj:"Re: Family tour Niyodo Blue",body:"Dear Chen Wei,\nYes, the route is about 4 km and suitable for children aged 6 and up. We have held 4 seats for you until 28 October."},
+   {id:"m11",dir:"in",at:"2026-10-22 20:44",subj:"Re: Family tour Niyodo Blue",body:"Thank you. Do you have child prices? And can we rent children's water shoes?"}
+  ],
+  ai:{summary:"11/21 仁淀ブルー渓谷ハイクに家族4名（大人2・6歳と9歳）で仮予約、10/28まで席を確保中。子ども料金と子ども用ウォーターシューズのレンタル可否を質問中。担当は山本さん（対応中）。",
+   requests:[{t:"子ども2名（6歳・9歳）同行",src:"m9",q:"children aged 6 and 9"}],
+   todos:[{t:"子ども料金を回答",src:"m11",q:"Do you have child prices?",done:false},{t:"子ども用ウォーターシューズの貸出可否を回答",src:"m11",q:"can we rent children's water shoes?",done:false},{t:"仮押さえ期限 10/28 の本予約確認",src:"m10",q:"We have held 4 seats for you until 28 October.",done:false}]},
+  draft:"Dear Chen Wei,\n\nChild price (ages 6-12) is 60% of the adult price: 9,600 JPY per child.\n\nWe lend children's water shoes free of charge. Please tell us their shoe sizes.\n\nYour seats are held until 28 October."},
+ {id:"g4",name:"Sophie Martin",country:"フランス",email:"sophie.martin@example.invalid",phone:"+33 1 0000 0004",pax:2,booking:"予約確定",pay:"一部入金",tours:["t01"],handler:"佐藤",state:"返信済",
+  emails:[
+   {id:"m12",dir:"in",at:"2026-10-02 10:00",subj:"Kochi castle & Hirome market",body:"Bonjour, we would like the Kochi Castle & Hirome Market food walk on 7 November for 2 people. We love sake!"},
+   {id:"m13",dir:"out",at:"2026-10-02 16:10",subj:"Re: Kochi castle & Hirome market",body:"Dear Sophie,\nBooked for 2 on 7 November. We can add a sake tasting at a local brewery (+3,500 JPY per person). A 30% deposit is required."},
+   {id:"m14",dir:"in",at:"2026-10-03 08:30",subj:"Re: Kochi castle & Hirome market",body:"Yes please add the sake tasting. Deposit paid."},
+   {id:"m15",dir:"out",at:"2026-10-25 11:00",subj:"Balance payment - 7 Nov",body:"Dear Sophie,\nThe sake tasting is confirmed. The remaining 70% can be paid on the day in cash or card."}
+  ],
+  ai:{summary:"11/7 高知城・ひろめ市場 食べ歩き（2名）予約確定。日本酒好きで酒蔵試飲（+3,500円/人）を追加。30%入金済、残り70%は当日払いで案内済。未対応事項なし。",
+   requests:[{t:"酒蔵の日本酒試飲を追加（+3,500円/人）",src:"m14",q:"Yes please add the sake tasting."}],
+   todos:[{t:"残金70%は当日払いと案内",src:"m15",q:"The remaining 70% can be paid on the day in cash or card.",done:true}]},
+  draft:""},
+ {id:"g5",name:"James Carter",country:"アメリカ",email:"james.carter@example.invalid",phone:"+1 212 000 0005",pax:2,booking:"予約確定",pay:"入金済",tours:["t03"],handler:null,state:"返信済",
+  emails:[
+   {id:"m16",dir:"in",at:"2026-10-05 12:00",subj:"Booking for Shimanto",body:"Hi, booking 2 seats for Shimanto 14 Nov. Paid via the link. My wife Olivia uses a hearing aid, so please make sure the guide speaks clearly in the safety briefing."},
+   {id:"m17",dir:"out",at:"2026-10-05 17:30",subj:"Re: Booking for Shimanto",body:"Dear James,\nThank you, payment confirmed. We will give Olivia a printed safety sheet as well."}
+  ],
+  ai:{summary:"11/14 四万十カヌー（2名）予約確定・入金済。同行の妻 Olivia さんは補聴器を使用＝安全説明ははっきり話し、紙の説明書も渡す。未対応事項なし。",
+   requests:[{t:"同行者が補聴器を使用＝安全説明は紙も渡す",src:"m16",q:"My wife Olivia uses a hearing aid"}],
+   todos:[{t:"紙の安全説明書を用意",src:"m17",q:"We will give Olivia a printed safety sheet as well.",done:true}]},
+  draft:""},
+ {id:"g6",name:"Hannah Lee",country:"オーストラリア",email:"hannah.lee@example.invalid",phone:"+61 2 0000 0006",pax:1,booking:"問い合わせ",pay:"未入金",tours:[],handler:null,state:"未対応",
+  emails:[
+   {id:"m18",dir:"in",at:"2026-10-23 06:50",subj:"Private tour in December?",body:"Hello,\nI am planning a trip to Shikoku from 10 to 16 December. Do you offer a private 3-day tour including the Iya Valley vine bridge?\nMy budget is around 150,000 JPY."}
+  ],
+  ai:{summary:"12/10〜16 の四国旅行で、祖谷のかずら橋を含む3日間の貸切ツアーを希望する新規の問い合わせ。予算は約15万円。3日経過して未返信＝返信漏れの恐れ。",
+   requests:[{t:"3日間の貸切ツアー（祖谷のかずら橋を含む）",src:"m18",q:"Do you offer a private 3-day tour including the Iya Valley vine bridge?"},{t:"予算 約15万円",src:"m18",q:"My budget is around 150,000 JPY."}],
+   todos:[{t:"12/10〜16 の貸切3日プランを提案",src:"m18",q:"I am planning a trip to Shikoku from 10 to 16 December.",done:false}]},
+  draft:"Dear Hannah,\n\nThank you for your inquiry. Yes, we can arrange a private 3-day tour including the Iya Valley vine bridge between 10 and 16 December.\n\nA sample plan within your budget of about 150,000 JPY is attached. Could you tell us your preferred start date and the number of travellers?"},
+ {id:"g7",name:"Marco Rossi",country:"イタリア",email:"marco.rossi@example.invalid",phone:"+39 06 0000 0007",pax:3,booking:"予約確定",pay:"入金済",tours:["t07"],handler:"山本",state:"返信済",
+  emails:[
+   {id:"m19",dir:"in",at:"2026-10-09 09:45",subj:"Muroto Geopark 28 Nov",body:"Ciao, 3 friends for the Muroto tour on 28 Nov. One of us is a photographer - is there time for sunrise photos at Cape Muroto?"},
+   {id:"m20",dir:"out",at:"2026-10-09 15:20",subj:"Re: Muroto Geopark 28 Nov",body:"Dear Marco,\nBooked for 3. Sunrise on 29 Nov is around 6:40; we will add an optional early walk to the cape."}
+  ],
+  ai:{summary:"11/28 室戸ジオパーク（3名）予約確定・入金済。写真家が同行＝11/29の日の出（6:40頃）撮影の早朝散策を追加済。未対応事項なし。",
+   requests:[{t:"室戸岬で日の出撮影（11/29 6:40頃）",src:"m19",q:"is there time for sunrise photos at Cape Muroto?"}],
+   todos:[{t:"早朝散策を行程に追加",src:"m20",q:"we will add an optional early walk to the cape.",done:true}]},
+  draft:""},
+ {id:"g8",name:"Aisha Rahman",country:"マレーシア",email:"aisha.rahman@example.invalid",phone:"+60 3 0000 0008",pax:2,booking:"予約確定",pay:"入金済",tours:["t05"],handler:"佐藤",state:"未対応",
+  emails:[
+   {id:"m21",dir:"in",at:"2026-10-15 13:12",subj:"Niyodo 21 Nov - halal food",body:"Hello, 2 people for Niyodo Blue on 21 Nov. We need halal food, and a quiet place to pray at noon if possible."},
+   {id:"m22",dir:"out",at:"2026-10-15 18:00",subj:"Re: Niyodo 21 Nov - halal food",body:"Dear Aisha,\nBooked. We will prepare a halal-certified bento and a quiet room at the visitor centre around noon."},
+   {id:"m23",dir:"in",at:"2026-10-25 09:30",subj:"Re: Niyodo 21 Nov - halal food",body:"Thank you! Could you tell us what to wear? Is it OK to hike in a long skirt?"}
+  ],
+  ai:{summary:"11/21 仁淀ブルー（2名）予約確定・入金済。ハラール食と昼の礼拝場所が必要（ビジターセンターの部屋を手配済）。10/25のメールで服装（ロングスカートで歩けるか）を質問中＝未返信。",
+   requests:[{t:"ハラール食（認証弁当）",src:"m21",q:"We need halal food"},{t:"正午ごろ礼拝できる静かな場所",src:"m21",q:"a quiet place to pray at noon if possible"}],
+   todos:[{t:"服装（ロングスカート可否）を回答",src:"m23",q:"Is it OK to hike in a long skirt?",done:false}]},
+  draft:"Dear Aisha,\n\nA long skirt is fine for most of the route, but there are a few rocky steps near the waterfall. Light trousers or leggings under the skirt and shoes with good grip are recommended.\n\nThe halal bento and the prayer room are arranged."}
+];
+
+/* ---------- 見本データ：ツアー（年間約50本を自動で並べる） ---------- */
+const TEMPLATES = {
+ kochi:{name:"高知城とひろめ市場 食べ歩き",days:1,cap:10,hotels:[],acts:[{d:1,t:"10:00",n:"高知城 天守 入場",s:"予約済"},{d:1,t:"12:00",n:"ひろめ市場 昼食（かつおのたたき）",s:"予約済"},{d:1,t:"15:00",n:"酒蔵見学・試飲（希望者）",s:"仮押さえ"}],
+   it:[[ ["09:30","高知駅 集合"],["10:00","高知城"],["12:00","ひろめ市場で昼食"],["14:00","日曜市跡・はりまや橋"],["15:00","酒蔵（希望者）"],["16:30","解散"] ]]},
+ shimanto:{name:"四万十川カヌーと沈下橋",days:2,cap:12,hotels:[{n:"四万十 川沿いの旅館",night:1,s:"手配済"}],acts:[{d:1,t:"10:30",n:"カヌー講習＋川下り（約8km）",s:"予約済"},{d:2,t:"09:00",n:"沈下橋サイクリング",s:"予約済"}],
+   it:[[ ["09:10","中村駅 集合"],["10:30","カヌー講習・川下り"],["13:00","川辺で昼食"],["16:00","旅館チェックイン"]],[ ["09:00","沈下橋サイクリング"],["12:00","昼食"],["14:30","中村駅 解散"] ]]},
+ niyodo:{name:"仁淀ブルー 渓谷ハイク",days:1,cap:12,hotels:[],acts:[{d:1,t:"10:00",n:"安居渓谷ハイク（約4km）",s:"予約済"},{d:1,t:"12:00",n:"ビジターセンター 昼食・休憩室",s:"予約済"}],
+   it:[[ ["08:30","高知駅 集合"],["10:00","安居渓谷ハイク"],["12:00","昼食・休憩"],["13:30","にこ淵"],["16:30","高知駅 解散"] ]]},
+ muroto:{name:"室戸ジオパークと岬の朝日",days:2,cap:10,hotels:[{n:"室戸 海沿いのホテル",night:1,s:"手配中"}],acts:[{d:1,t:"13:00",n:"ジオパーク ガイド散策",s:"予約済"},{d:2,t:"06:20",n:"室戸岬 日の出散策（希望者）",s:"未手配"}],
+   it:[[ ["09:00","高知駅 集合"],["13:00","ジオパーク散策"],["17:00","ホテル到着"]],[ ["06:20","岬で日の出（希望者）"],["10:00","海洋深層水の施設"],["15:30","高知駅 解散"] ]]},
+ iya:{name:"祖谷のかずら橋と大歩危",days:3,cap:8,hotels:[{n:"祖谷 渓谷の宿",night:1,s:"手配済"},{n:"大歩危 温泉旅館",night:2,s:"手配済"}],acts:[{d:1,t:"14:00",n:"かずら橋",s:"予約済"},{d:2,t:"10:00",n:"大歩危 遊覧船",s:"予約済"}],
+   it:[[ ["09:00","高知駅 集合"],["14:00","かずら橋"],["17:00","宿"]],[ ["10:00","大歩危 遊覧船"],["15:00","温泉旅館"]],[ ["10:00","落合集落 展望"],["16:00","高知駅 解散"] ]]},
+ henro:{name:"四国遍路 体験ウォーク",days:4,cap:8,hotels:[{n:"宿坊（寺の宿）",night:1,s:"手配済"},{n:"遍路宿",night:2,s:"手配済"},{n:"高知市内ホテル",night:3,s:"手配中"}],acts:[{d:1,t:"10:00",n:"白衣・金剛杖の着付け",s:"予約済"},{d:2,t:"05:30",n:"宿坊の朝のおつとめ",s:"予約済"}],
+   it:[[ ["09:00","高知駅 集合"],["10:00","着付け・作法"],["13:00","札所を歩く"]],[ ["05:30","朝のおつとめ"],["08:00","遍路道（約12km）"]],[ ["08:00","遍路道（約10km）"]],[ ["09:00","札所参拝"],["15:00","高知駅 解散"] ]]}
+};
+const ROT = ["kochi","shimanto","niyodo","muroto","iya","henro"];
+const GUIDES = ["田中","岡","西村"];
+function addDays(s,n){const d=new Date(s+"T00:00:00");d.setDate(d.getDate()+n);const p=x=>String(x).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
+const TOURS = [];
+const FIXED = {t01:{k:"kochi",start:"2026-11-07",guide:"岡"},t03:{k:"shimanto",start:"2026-11-14",guide:"田中"},t05:{k:"niyodo",start:"2026-11-21",guide:"田中"},t07:{k:"muroto",start:"2026-11-28",guide:"西村"}};
+for(let i=1;i<=50;i++){
+  const id="t"+String(i).padStart(2,"0");
+  const f=FIXED[id];
+  const k=f?f.k:ROT[(i-1)%ROT.length];
+  const start=f?f.start:addDays("2026-11-03",(i-1)*7);
+  const tp=TEMPLATES[k];
+  const ext=f?0:((i*7)%tp.cap);
+  TOURS.push({id,k,name:tp.name,start,days:tp.days,cap:tp.cap,guide:f?f.guide:GUIDES[i%3],ext,
+    hotels:tp.hotels,acts:tp.acts,it:tp.it});
+}
+/* 日付で並べ直す（固定回が他と重なる場合あり） */
+TOURS.sort((a,b)=>a.start.localeCompare(b.start));
+function guestsOf(t){return GUESTS.filter(g=>g.tours.includes(t.id))}
+function paxOf(t){return guestsOf(t).reduce((s,g)=>s+g.pax,0)+t.ext}
+function tourStatus(t){const p=paxOf(t);if(t.start<TODAY)return["催行済","chip"];if(p>=4)return["催行決定","chip c-ok"];if(p>0)return["最少催行待ち","chip c-warn"];return["募集中","chip c-river"]}
+const tourById=id=>TOURS.find(t=>t.id===id);
+const guestById=id=>GUESTS.find(g=>g.id===id);
+function fmtDate(s){const d=new Date(s+"T00:00:00");return `${d.getMonth()+1}/${d.getDate()}（${"日月火水木金土"[d.getDay()]}）`}
+function range(t){return t.days>1?`${fmtDate(t.start)}〜${fmtDate(addDays(t.start,t.days-1))}`:fmtDate(t.start)}
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ---------- 状態 ---------- */
+let S={view:"guests",guest:"g1",tour:"t03",user:"sato",flashMail:null,q:"",tourFilter:"upcoming"};
+function me(){return USERS[S.user]}
+function lastIn(g){const ins=g.emails.filter(m=>m.dir==="in");return ins[ins.length-1]}
+function unanswered(g){const l=g.emails[g.emails.length-1];return l.dir==="in"}
+function hoursSince(at){return Math.round((new Date(TODAY+"T12:00:00")-new Date(at.replace(" ","T")+":00"))/36e5)}
+function stateChip(g){
+  if(g.state==="返信済"&&!unanswered(g))return '<span class="chip c-ok">返信済</span>';
+  if(g.handler)return `<span class="chip c-river">対応中：${esc(g.handler)}</span>`;
+  return '<span class="chip c-bad">未対応</span>';
+}
+function payChip(p){return `<span class="chip ${p==="入金済"?"c-ok":p==="一部入金"?"c-warn":"c-bad"}">${p}</span>`}
+function bookChip(b){return `<span class="chip ${b==="予約確定"?"c-ok":b==="仮予約"?"c-warn":"c-sand"}">${b}</span>`}
+function toast(t){const el=document.getElementById("toast");el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>el.hidden=true,2600)}
+
+/* ---------- 画面：ゲスト ---------- */
+function viewGuests(){
+  const q=S.q.toLowerCase();
+  const list=GUESTS.filter(g=>!q||(g.name+g.email+g.country).toLowerCase().includes(q));
+  const g=guestById(S.guest)||list[0];
+  return `<div class="split">
+   <section class="panel" aria-label="ゲスト一覧">
+     <div class="list-head"><input id="q" type="search" placeholder="名前・メールで検索" value="${esc(S.q)}" aria-label="ゲスト検索"></div>
+     <div class="list" role="listbox">${list.map(x=>`
+       <button type="button" class="row" role="option" aria-selected="${x.id===g.id}" data-guest="${x.id}">
+         <div class="l1"><span>${esc(x.name)}</span>${stateChip(x)}</div>
+         <div class="l2"><span class="mono">${esc(x.email)}</span></div>
+         <div class="l2">${bookChip(x.booking)}${payChip(x.pay)}<span>${x.pax}名・${esc(x.country)}</span></div>
+       </button>`).join("")||'<div class="empty">該当するゲストがいません</div>'}
+     </div>
+   </section>
+   <section class="panel detail" aria-label="ゲスト詳細">${g?guestDetail(g):""}</section>
+  </div>`;
+}
+function guestDetail(g){
+  const u=me();
+  const other=g.handler&&g.handler!==u.name;
+  const lockHtml = g.handler
+    ? `<div class="lock ${other?"c-warn":"c-river"}">${other?`⚠ <b>${esc(g.handler)}さんが対応中です。</b>二重対応を防ぐため返信欄はロックしています。`:`あなた（${esc(u.name)}）が対応中です。`}
+        ${other?`<button type="button" class="btn ghost" data-act="takeover">担当を引き継ぐ</button>`:`<button type="button" class="btn ghost" data-act="release">担当を外す</button>`}</div>`
+    : `<div class="lock c-bad"><b>担当者が決まっていません。</b><button type="button" class="btn" data-act="claim">自分が対応する</button></div>`;
+  const ai=g.ai;
+  return `
+   <div class="d-head"><h1>${esc(g.name)}</h1>${bookChip(g.booking)}${payChip(g.pay)}${stateChip(g)}
+     <div class="sub">基本キー <span class="mono">${esc(g.email)}</span>　／　${esc(g.country)}・${g.pax}名・<span class="mono">${esc(g.phone)}</span></div></div>
+   <div class="ai">
+     <div class="ai-h"><span>AIによる対応履歴の要約（メール ${g.emails.length}通から）</span><span class="muted">各項目の「原文」で元のメールを確認できます</span></div>
+     <p>${esc(ai.summary)}</p>
+     <div class="ai-cols">
+       <div><h3>要望・特記事項</h3><ul>${ai.requests.map(r=>`<li><span>${esc(r.t)}</span><button type="button" class="src" data-src="${r.src}">原文</button></li>`).join("")}</ul></div>
+       <div><h3>未対応事項</h3><ul>${ai.todos.map((r,i)=>`<li class="${r.done?"done":""}"><label><input type="checkbox" data-todo="${i}" ${r.done?"checked":""} ${u.role==="guide"?"disabled":""}><span>${esc(r.t)}</span></label><button type="button" class="src" data-src="${r.src}">原文</button></li>`).join("")}</ul></div>
+     </div>
+   </div>
+   <h2>参加ツアー</h2>
+   <div class="tour-chips">${g.tours.length?g.tours.map(id=>{const t=tourById(id);return `<button type="button" class="tour-chip" data-tour="${t.id}"><b>${esc(t.name)}</b><span class="mono">${range(t)}</span>　ガイド ${esc(t.guide)}</button>`}).join(""):'<span class="muted">まだ参加ツアーはありません（問い合わせ段階）</span>'}</div>
+   <h2>メール履歴（共通アドレスとの送受信）</h2>
+   <div class="thread">${g.emails.map(m=>mailHtml(m,g)).join("")}</div>
+   <h2>返信</h2>
+   ${lockHtml}
+   <div style="margin-top:10px">
+     <label for="reply" class="muted" style="font-size:12px">宛先 <span class="mono">${esc(g.email)}</span>・差出人 共通アドレス（署名：${esc(u.name)}）</label>
+     <textarea id="reply" ${other||!g.handler?"disabled":""} placeholder="${g.draft?"「AIで下書き」を押すと、未対応事項に答える下書きが入ります":"返信文を入力"}"></textarea>
+     <div class="compose-bar">
+       <button type="button" class="btn ghost" data-act="draft" ${other||!g.handler||!g.draft?"disabled":""}>AIで下書き</button>
+       <button type="button" class="btn" data-act="send" ${other||!g.handler?"disabled":""}>送信（デモ）</button>
+       <span class="muted" style="font-size:12px">送信すると履歴に追加され、状態が「返信済」になります</span>
+     </div>
+   </div>`;
+}
+function mailHtml(m,g){
+  let body=esc(m.body);
+  if(S.flashMail===m.id){
+    const qs=[...g.ai.requests,...g.ai.todos].filter(r=>r.src===m.id).map(r=>esc(r.q));
+    qs.forEach(q=>{body=body.split(q).join(`<mark>${q}</mark>`)});
+  }
+  return `<article class="mail ${m.dir} ${S.flashMail===m.id?"flash":""}" id="mail-${m.id}">
+    <div class="mh"><span>${m.dir==="in"?`受信　<b>${esc(g.name)}</b>`:`送信　<b>共通アドレス</b>`}　${esc(m.subj)}</span><span class="mono">${m.at}</span></div>
+    <pre>${body}</pre></article>`;
+}
+
+/* ---------- 画面：ツアー ---------- */
+function viewTours(){
+  const u=me();
+  let list=TOURS.slice();
+  if(S.tourFilter==="upcoming")list=list.filter(t=>t.start>=TODAY).slice(0,12);
+  const t=tourById(S.tour)||list[0];
+  return `<div class="split">
+   <section class="panel" aria-label="ツアー一覧">
+     <div class="list-head"><select id="tf" aria-label="表示する範囲">
+       <option value="upcoming" ${S.tourFilter==="upcoming"?"selected":""}>近い開催回（12本）</option>
+       <option value="all" ${S.tourFilter==="all"?"selected":""}>年間すべて（${TOURS.length}本）</option></select></div>
+     <div class="list" role="listbox">${list.map(x=>{const st=tourStatus(x);return `
+       <button type="button" class="row" role="option" aria-selected="${x.id===t.id}" data-tour="${x.id}">
+         <div class="l1"><span>${esc(x.name)}</span><span class="${st[1]}">${st[0]}</span></div>
+         <div class="l2"><span class="mono">${range(x)}</span><span>${paxOf(x)}/${x.cap}名</span><span>ガイド ${esc(x.guide)}</span></div>
+       </button>`}).join("")}</div>
+   </section>
+   <section class="panel detail" aria-label="ツアー詳細">${tourDetail(t)}</section>
+  </div>`;
+}
+function tourDetail(t){
+  const gs=guestsOf(t);const st=tourStatus(t);
+  return `<div class="d-head"><h1>${esc(t.name)}</h1><span class="${st[1]}">${st[0]}</span>
+     <div class="sub"><span class="mono">${range(t)}</span>　${t.days}日間・参加 ${paxOf(t)}/${t.cap}名・担当ガイド ${esc(t.guide)}</div></div>
+   <h2>参加ゲスト一覧</h2>
+   ${gs.length?`<div class="tbl-wrap"><table><thead><tr><th>ゲスト</th><th>人数</th><th>予約・入金</th><th>要望・注意事項（AI抽出）</th><th>未対応</th></tr></thead><tbody>
+     ${gs.map(g=>`<tr><td><button type="button" class="link" data-guest="${g.id}">${esc(g.name)}</button><div class="muted" style="font-size:12px">${esc(g.country)}</div></td><td class="mono">${g.pax}</td><td>${bookChip(g.booking)}<br>${payChip(g.pay)}</td><td>${g.ai.requests.map(r=>esc(r.t)).join("<br>")}</td><td class="mono">${g.ai.todos.filter(x=>!x.done).length}件</td></tr>`).join("")}
+   </tbody></table></div>`:""}
+   ${t.ext?`<p class="muted" style="font-size:12px;margin:8px 0 0">ほかの予約 ${t.ext}名はこのデモでは氏名を省略しています。</p>`:""}
+   ${!gs.length&&!t.ext?'<p class="muted">まだ参加ゲストはいません。</p>':""}
+   <h2>ホテル・宿泊手配</h2>
+   ${t.hotels.length?`<div class="tbl-wrap"><table><thead><tr><th>泊</th><th>宿</th><th>手配状況</th></tr></thead><tbody>${t.hotels.map(h=>`<tr><td class="mono">${h.night}泊目</td><td>${esc(h.n)}</td><td><span class="chip ${h.s==="手配済"?"c-ok":"c-warn"}">${h.s}</span></td></tr>`).join("")}</tbody></table></div>`:'<p class="muted">日帰りのため宿泊なし</p>'}
+   <h2>アクティビティ・予約状況</h2>
+   <div class="tbl-wrap"><table><thead><tr><th>日</th><th>時刻</th><th>内容</th><th>予約</th></tr></thead><tbody>${t.acts.map(a=>`<tr><td class="mono">${a.d}日目</td><td class="mono">${a.t}</td><td>${esc(a.n)}</td><td><span class="chip ${a.s==="予約済"?"c-ok":a.s==="仮押さえ"?"c-warn":"c-bad"}">${a.s}</span></td></tr>`).join("")}</tbody></table></div>
+   <h2>行程</h2>
+   ${t.it.map((d,i)=>`<div class="day"><b>${i+1}日目　<span class="mono">${fmtDate(addDays(t.start,i))}</span></b><ol>${d.map(x=>`<li><span class="mono">${x[0]}</span><span>${esc(x[1])}</span></li>`).join("")}</ol></div>`).join("")}`;
+}
+
+/* ---------- 画面：共通メール ---------- */
+function viewInbox(){
+  const rows=GUESTS.map(g=>({g,m:g.emails[g.emails.length-1]})).sort((a,b)=>b.m.at.localeCompare(a.m.at));
+  const open=GUESTS.filter(unanswered);
+  const late=open.filter(g=>hoursSince(lastIn(g).at)>=24&&!g.handler);
+  return `<div class="summary-strip">
+     <div><b>${open.length}</b><span>返信待ちのゲスト</span></div>
+     <div><b style="color:var(--bad)">${late.length}</b><span>24時間以上・担当なし（返信漏れの恐れ）</span></div>
+     <div><b>${GUESTS.filter(g=>g.handler&&unanswered(g)).length}</b><span>担当者が対応中</span></div>
+     <div><b>${GUESTS.reduce((s,g)=>s+g.ai.todos.filter(t=>!t.done).length,0)}</b><span>AIが抽出した未対応事項</span></div>
+   </div>
+   <section class="panel" aria-label="共通メールの受信箱">
+     ${rows.map(({g,m})=>{const h=hoursSince(m.at);const needs=m.dir==="in";return `
+     <div class="inbox-row">
+       <div><button type="button" class="link" data-guest="${g.id}">${esc(g.name)}</button><div class="mono muted" style="font-size:12px">${m.at}${needs?`（${h}時間前）`:""}</div></div>
+       <div class="ib-sub">${needs?"":"↩ "}${esc(m.subj)} — ${esc(g.ai.summary)}</div>
+       <div>${needs?(g.handler?`<span class="chip c-river">対応中：${esc(g.handler)}</span>`:`<span class="chip c-bad">${h>=24?"返信漏れ注意":"未対応"}</span>`):'<span class="chip c-ok">返信済</span>'}</div>
+       <div class="mono muted" style="font-size:12px">${g.ai.todos.filter(t=>!t.done).length}件</div>
+     </div>`}).join("")}
+   </section>
+   <p class="muted" style="font-size:12px">本番では Google Workspace の共通アドレスに届いたメールを自動で取り込み、送信元のメールアドレスでゲストへひも付けます。</p>`;
+}
+
+/* ---------- 画面：ガイド ---------- */
+function viewGuide(){
+  const guideName = me().role==="guide"?me().name:"田中";
+  const mine=TOURS.filter(t=>t.guide===guideName&&t.start>=TODAY).slice(0,3);
+  return `<div class="guide-layout">
+   <div class="phone" aria-label="ガイドのスマホ画面">
+     <div class="phone-top"><b>${esc(guideName)}さんの担当ツアー</b><div style="font-size:12px">本日 ${fmtDate(TODAY)}・担当分だけ表示</div></div>
+     <div class="phone-body">${mine.map(t=>{const gs=guestsOf(t);return `
+       <div class="g-card"><h3>${esc(t.name)}</h3><div class="mono muted" style="font-size:12px">${range(t)}・${paxOf(t)}名</div>
+         ${t.it.map((d,i)=>`<div class="day"><b>${i+1}日目</b><ol>${d.map(x=>`<li><span class="mono">${x[0]}</span><span>${esc(x[1])}</span></li>`).join("")}</ol></div>`).join("")}
+         ${t.hotels.length?`<div class="gp">宿：${t.hotels.map(h=>esc(h.n)).join("／")}</div>`:""}
+         ${gs.map(g=>`<div class="gp"><b>${esc(g.name)}</b>（${g.pax}名・${esc(g.country)}）<div class="mono muted" style="font-size:12px">緊急連絡 ${esc(g.phone)}</div>${g.ai.requests.map(r=>`<div class="need">● ${esc(r.t)}</div>`).join("")}</div>`).join("")}
+         ${t.ext?`<div class="gp muted">ほか ${t.ext}名</div>`:""}
+       </div>`}).join("")||'<div class="empty">担当ツアーはありません</div>'}
+     </div>
+   </div>
+   <div class="explain"><h3>ガイドに見せる情報だけを出す</h3>
+     <p>ガイドの ID でログインすると、この画面だけが開きます。上の「ログイン中」を「田中（ガイド）」に切り替えると、ほかの画面が閉じることを確認できます。</p>
+     <ul>
+       <li>表示するもの：担当ツアーの行程・宿・参加ゲストの氏名・人数・緊急連絡先・食事や体調の注意事項</li>
+       <li>表示しないもの：メール本文・入金状況・他ガイドの担当ツアー・問い合わせ段階のゲスト</li>
+       <li>注意事項はメールからAIが抽出した「要望・特記事項」がそのまま入るため、転記の手間と漏れがなくなります</li>
+     </ul></div>
+  </div>`;
+}
+
+/* ---------- 描画と操作 ---------- */
+function allowed(view){const r=me().role;if(r==="guide")return view==="guide";return true}
+function render(){
+  if(!allowed(S.view))S.view="guide";
+  document.querySelectorAll("nav.tabs button").forEach(b=>{
+    const v=b.dataset.view;b.hidden=!allowed(v);
+    b.setAttribute("aria-current",v===S.view?"page":"false");
+    if(v==="inbox"){const n=GUESTS.filter(g=>unanswered(g)&&!g.handler).length;b.innerHTML=`共通メール${n?`<span class="cnt">${n}</span>`:""}`}
+  });
+  const app=document.getElementById("app");
+  app.innerHTML = S.view==="guests"?viewGuests():S.view==="tours"?viewTours():S.view==="inbox"?viewInbox():viewGuide();
+  try{const h=S.view==="guests"?S.guest:S.view==="tours"?S.tour:S.view;history.replaceState(null,"","#"+h)}catch(e){}
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.view){S.view=b.dataset.view;S.flashMail=null;render();return}
+  if(b.dataset.guest){S.guest=b.dataset.guest;S.view="guests";S.flashMail=null;render();window.scrollTo({top:0});return}
+  if(b.dataset.tour){S.tour=b.dataset.tour;S.view="tours";render();window.scrollTo({top:0});return}
+  if(b.dataset.src){S.flashMail=b.dataset.src;render();const el=document.getElementById("mail-"+b.dataset.src);if(el)el.scrollIntoView({behavior:"smooth",block:"center"});return}
+  const g=guestById(S.guest);const act=b.dataset.act;if(!act||!g)return;
+  const u=me();
+  if(act==="claim"||act==="takeover"){g.handler=u.name;g.state="対応中";render();toast(`${u.name}さんの担当にしました。ほかのスタッフには「対応中」と表示されます`)}
+  else if(act==="release"){g.handler=null;g.state=unanswered(g)?"未対応":"返信済";render();toast("担当を外しました")}
+  else if(act==="draft"){document.getElementById("reply").value=g.draft;toast("未対応事項に答える下書きを入れました。内容を確認してから送信してください")}
+  else if(act==="send"){
+    const v=document.getElementById("reply").value.trim();
+    if(!v){toast("返信文が空です。本文を入力してください");return}
+    const last=lastIn(g);
+    g.emails.push({id:"m"+Date.now(),dir:"out",at:`${TODAY} 12:00`,subj:"Re: "+last.subj.replace(/^Re: /,""),body:v+"\n\n— "+u.name});
+    g.ai.todos.forEach(t=>{if(t.src===last.id)t.done=true});
+    g.state="返信済";g.handler=null;S.flashMail=null;render();toast("履歴に追加しました（デモのため実際には送信していません）");
+  }
+});
+document.addEventListener("change",e=>{
+  if(e.target.id==="role"){S.user=e.target.value;if(me().role==="guide")S.view="guide";render();toast(`${me().name}（${me().label}）でログインしました`)}
+  if(e.target.id==="tf"){S.tourFilter=e.target.value;render()}
+  if(e.target.dataset&&e.target.dataset.todo!==undefined){const g=guestById(S.guest);g.ai.todos[+e.target.dataset.todo].done=e.target.checked;render()}
+});
+document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;const pos=e.target.selectionStart;render();const q=document.getElementById("q");q.focus();q.setSelectionRange(pos,pos)}});
+(function init(){
+  const h=(location.hash||"").slice(1);
+  if(guestById(h)){S.view="guests";S.guest=h}
+  else if(tourById(h)){S.view="tours";S.tour=h}
+  else if(["guests","tours","inbox","guide"].includes(h))S.view=h;
+  render();
+})();
+</script>
+
+</body>
+</html>
